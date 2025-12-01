@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Handwritten Notes (Fixed PDF)</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
+    
+    <!-- Rough.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/rough.js/3.1.0/rough.js"></script>
+    
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f0f2f5;
+            margin: 0;
+            font-family: 'Patrick Hand', cursive;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* --- VIEW MANAGEMENT --- */
+        .view-container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            box-sizing: border-box;
+            /* Ensure views are visible by default unless hidden class is added */
+            display: block; 
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* --- INPUT VIEW --- */
+        #inputView {
+            display: flex; /* Flex is re-applied via ID if not hidden */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .input-card {
+            background: #fff;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #e0e0e0;
+        }
+
+        h1 { color: #2c3e50; margin-top: 0; text-align: center; font-size: 2.5rem; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 30px; font-size: 1.2rem; }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 16px;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 25px;
+        }
+        textarea:focus { outline: none; border-color: #ffeb3b; }
+
+        .button-group { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+
+        /* --- OUTPUT VIEW --- */
+        #outputView {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .top-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            max-width: 820px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            /* We removed the CSS background image here because we draw it in JS now */
+            background: white; 
+        }
+
+        #paperCanvas {
+            display: block;
+        }
+
+        /* --- QUIZ VIEW --- */
+        #quizView {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh;
+        }
+        .quiz-card {
+            background: #fff;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+            border: 2px solid #333;
+        }
+        .question-text { font-size: 1.5rem; margin-bottom: 30px; color: #2c3e50; font-weight: bold; }
+        .options-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 30px; }
+        .option-btn {
+            background: #f5f5f5; border: 2px solid #ddd; padding: 15px; border-radius: 8px; cursor: pointer;
+            font-family: 'Patrick Hand', cursive; font-size: 1.2rem; transition: all 0.2s; text-align: left;
+        }
+        .option-btn:hover { background: #e3f2fd; border-color: #2196f3; }
+        .option-btn.correct { background: #c8e6c9 !important; border-color: #4caf50 !important; }
+        .option-btn.wrong { background: #ffcdd2 !important; border-color: #f44336 !important; }
+
+        /* --- CONTROLS --- */
+        button {
+            font-family: 'Patrick Hand', cursive; font-size: 1.2rem; padding: 10px 20px; cursor: pointer;
+            border: 2px solid #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        button:active { transform: scale(0.98); }
+        button:disabled { background: #e0e0e0 !important; color: #999; cursor: wait; }
+        .btn-primary { background: #ffeb3b; color: #000; }
+        .btn-secondary { background: #b3e5fc; color: #000; }
+        .btn-outline { background: transparent; border: 2px solid #333; }
+        .btn-download { background: #4caf50; color: white; border-color: #388e3c; }
+        .btn-quiz { background: #ce93d8; color: black; }
+        .btn-ask { background: #ffcc80; color: black; }
+
+        .pagination-controls {
+            display: flex; gap: 20px; align-items: center; margin-top: 20px; font-size: 1.2rem;
+            background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        .page-btn {
+            background: #fff; border: 2px solid #333; border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: bold;
+        }
+        .page-btn:hover { background: #ffeb3b; }
+
+        /* --- MODAL --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+            display: flex; justify-content: center; align-items: center; z-index: 1000;
+        }
+        .modal-card {
+            background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); font-family: 'Patrick Hand', cursive;
+        }
+        .chat-response {
+            background: #f5f5f5; padding: 15px; border-radius: 8px; margin-top: 15px;
+            max-height: 200px; overflow-y: auto; border-left: 4px solid #ffcc80;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- INPUT VIEW -->
+    <div id="inputView" class="view-container">
+        <div class="input-card">
+            <h1>✨ AI Note Alchemist</h1>
+            <p class="subtitle">Turn raw text into beautiful handwritten notes, flowcharts & quizzes.</p>
+            
+            <textarea id="userInput" placeholder="Paste your study notes, a process description, or any text here... (e.g., 'Explain the water cycle' or 'How does a bill become a law?')"></textarea>
+            
+            <div class="button-group">
+                <button id="generateBtn" class="btn-primary" onclick="generateNotes('standard')">📝 Generate Notes</button>
+                <button id="simplifyBtn" class="btn-secondary" onclick="generateNotes('simple')">👶 Explain Like I'm 5</button>
+            </div>
+            <p id="status"></p>
+        </div>
+    </div>
+
+    <!-- OUTPUT VIEW -->
+    <div id="outputView" class="view-container hidden">
+        <div class="top-bar">
+            <div style="display:flex; gap:10px;">
+                <button class="btn-outline" onclick="resetApp()">← New</button>
+                <button class="btn-ask" onclick="openAskModal()">💬 Ask AI</button>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-quiz" onclick="startQuiz()">🧠 Quiz Me</button>
+                <button id="downloadBtn" class="btn-download" onclick="downloadPDF()">⬇ PDF</button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="paperCanvas" width="800" height="1000"></canvas>
+        </div>
+        
+        <div class="pagination-controls" id="paginationControls" style="display:none;">
+            <div class="page-btn" onclick="changePage(-1)">←</div>
+            <span id="pageIndicator">Page 1 of 1</span>
+            <div class="page-btn" onclick="changePage(1)">→</div>
+        </div>
+    </div>
+
+    <!-- QUIZ VIEW -->
+    <div id="quizView" class="view-container hidden">
+        <div class="quiz-card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:20px; color:#666;">
+                <span id="quizProgress">Question 1/5</span>
+                <span id="quizScoreDisplay">Score: 0</span>
+            </div>
+            <div id="quizQuestion" class="question-text">Loading question...</div>
+            <div id="quizOptions" class="options-grid"></div>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button class="btn-outline" onclick="switchView('output')">Exit Quiz</button>
+                <button id="nextQBtn" class="btn-primary" style="display:none;" onclick="nextQuestion()">Next Question →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ASK MODAL -->
+    <div id="askModal" class="modal-overlay hidden" onclick="if(event.target===this) closeAskModal()">
+        <div class="modal-card">
+            <h2 style="margin-top:0;">💬 Ask about your notes</h2>
+            <textarea id="askInput" style="height:80px; margin-bottom:10px; width: 100%; border-radius:5px; border:1px solid #ccc; padding:10px;" placeholder="e.g. Can you give me another example?"></textarea>
+            <button class="btn-ask" style="width:100%" onclick="askAI()">Ask Gemini</button>
+            <div id="askResponse" class="chat-response hidden"></div>
+            <button class="btn-outline" style="margin-top:10px; width:100%" onclick="closeAskModal()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const apiKey = "AIzaSyBVu1TS0MNB0sqrbarTbEG3W_ASl-YuK9k"; 
+
+        const canvas = document.getElementById('paperCanvas');
+        const ctx = canvas.getContext('2d');
+        let rc;
+        
+        // App State
+        let allPages = [];
+        let currentPageIndex = 0;
+        let originalText = ""; 
+        
+        // Quiz State
+        let currentQuizData = [];
+        let currentQuestionIdx = 0;
+        let score = 0;
+
+        // Constants
+        const PAGE_MARGIN = 50;
+        const LINE_HEIGHT = 30;
+        const CONTENT_HEIGHT_LIMIT = 920; 
+
+        // Init
+        window.addEventListener('load', () => {
+             // Explicitly unhide input view just in case CSS messed up
+             document.getElementById('inputView').classList.remove('hidden');
+             
+             if (typeof rough !== 'undefined') {
+                 rc = rough.canvas(canvas);
+             } else {
+                 alert("Critical Error: Rough.js library failed to load. Please check your internet connection.");
+             }
+        });
+
+        // --- NAVIGATION ---
+        function switchView(viewName) {
+            ['inputView', 'outputView', 'quizView'].forEach(v => {
+                document.getElementById(v).classList.add('hidden');
+            });
+            document.getElementById(viewName + 'View').classList.remove('hidden');
+        }
+
+        function resetApp() {
+            switchView('input');
+            document.getElementById('userInput').value = '';
+            document.getElementById('status').innerText = '';
+            originalText = "";
+        }
+
+        function openAskModal() {
+            document.getElementById('askModal').classList.remove('hidden');
+            document.getElementById('askResponse').classList.add('hidden');
+            document.getElementById('askResponse').innerText = '';
+        }
+        function closeAskModal() { document.getElementById('askModal').classList.add('hidden'); }
+
+        // --- GEMINI API ---
+        async function callGeminiAPI(prompt, systemInstruction) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] }
+            };
+
+            const response = await fetch(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || `API Error: ${response.status}`);
+            }
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        // --- CORE LOGIC ---
+        async function generateNotes(mode) {
+            if (!rc) return;
+            const text = document.getElementById('userInput').value.trim();
+            const btns = document.querySelectorAll('button');
+            const statusEl = document.getElementById('status');
+
+            if (!text) {
+                statusEl.innerText = "⚠️ Please enter some text first!";
+                statusEl.style.color = "#d32f2f";
+                return;
+            }
+
+            originalText = text;
+            btns.forEach(b => b.disabled = true);
+            statusEl.innerText = "✨ Analyzing & Transmuting...";
+            statusEl.style.color = "#666";
+
+            try {
+                let systemInstruction = "Act as a smart note organizer. Read the text and arrange it into a structured JSON for handwritten notes.";
+                if (mode === 'simple') systemInstruction += " IMPORTANT: Simplify concepts for a 5-year-old.";
+                else systemInstruction += " IMPORTANT: Do not summarize. Retain all original details.";
+
+                const prompt = `
+                Analyze the text and return ONLY a valid JSON object.
+                TEXT: ${text}
+                OUTPUT FORMAT:
+                {
+                  "title": "Main Title",
+                  "sections": [
+                    { "type": "definition_box", "heading": "Heading", "content": "Text here." },
+                    { "type": "bullet_list", "heading": "Key Points", "points": ["Detail 1", "Detail 2"] },
+                    { "type": "flowchart", "heading": "Process Flow", "steps": ["Step 1", "Step 2"] }
+                  ]
+                }
+                RULES:
+                1. Use 'flowchart' if there is a process/sequence.
+                2. Return strictly JSON. No markdown.
+                `;
+
+                let jsonString;
+                // Simple check for valid key length
+                if (!apiKey || apiKey.length < 10) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    jsonString = JSON.stringify(getMockData());
+                } else {
+                    const rawResponse = await callGeminiAPI(prompt, systemInstruction);
+                    jsonString = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+                }
+
+                const data = JSON.parse(jsonString);
+                paginateData(data);
+                switchView('output');
+                renderPage(0);
+
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = `Error: ${err.message}`;
+                statusEl.style.color = "#d32f2f";
+            } finally {
+                btns.forEach(b => b.disabled = false);
+            }
+        }
+
+        // --- QUIZ & CHAT ---
+        async function startQuiz() {
+            const btn = document.querySelector('.btn-quiz');
+            btn.innerText = "⏳ Generating...";
+            btn.disabled = true;
+
+            try {
+                const systemInstruction = "You are a teacher. Create a 5-question multiple choice quiz. Return ONLY JSON.";
+                const prompt = `Create 5 MCQs based on: "${originalText.substring(0, 3000)}" 
+                OUTPUT JSON: [{"question": "...", "options": ["A","B","C","D"], "answer": 0}]`;
+
+                const rawResponse = await callGeminiAPI(prompt, systemInstruction);
+                const jsonString = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+                currentQuizData = JSON.parse(jsonString);
+                currentQuestionIdx = 0; score = 0;
+                switchView('quiz');
+                renderQuizQuestion();
+            } catch (err) { alert("Failed to generate quiz: " + err.message); } 
+            finally { btn.innerText = "🧠 Quiz Me"; btn.disabled = false; }
+        }
+
+        function renderQuizQuestion() {
+            const q = currentQuizData[currentQuestionIdx];
+            document.getElementById('quizQuestion').innerText = q.question;
+            document.getElementById('quizProgress').innerText = `Question ${currentQuestionIdx + 1}/${currentQuizData.length}`;
+            document.getElementById('quizScoreDisplay').innerText = `Score: ${score}`;
+            document.getElementById('nextQBtn').style.display = 'none';
+            const container = document.getElementById('quizOptions');
+            container.innerHTML = '';
+            q.options.forEach((opt, idx) => {
+                const btn = document.createElement('div');
+                btn.className = 'option-btn';
+                btn.innerText = opt;
+                btn.onclick = () => checkAnswer(idx, btn);
+                container.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selectedIdx, btnElement) {
+            document.querySelectorAll('.option-btn').forEach(b => b.onclick = null);
+            const correctIdx = currentQuizData[currentQuestionIdx].answer;
+            if (selectedIdx === correctIdx) {
+                btnElement.classList.add('correct'); score++;
+                document.getElementById('quizScoreDisplay').innerText = `Score: ${score}`;
+            } else {
+                btnElement.classList.add('wrong');
+                document.querySelectorAll('.option-btn')[correctIdx].classList.add('correct');
+            }
+            const nextBtn = document.getElementById('nextQBtn');
+            nextBtn.style.display = 'block';
+            if (currentQuestionIdx === currentQuizData.length - 1) {
+                nextBtn.innerText = "Finish Quiz";
+                nextBtn.onclick = () => { alert(`Score: ${score}/${currentQuizData.length}`); switchView('output'); };
+            } else {
+                nextBtn.innerText = "Next Question →";
+                nextBtn.onclick = () => { currentQuestionIdx++; renderQuizQuestion(); };
+            }
+        }
+
+        async function askAI() {
+            const q = document.getElementById('askInput').value;
+            const box = document.getElementById('askResponse');
+            if(!q) return;
+            box.classList.remove('hidden'); box.innerText = "Thinking...";
+            try {
+                const ans = await callGeminiAPI(`Context: "${originalText.substring(0,2000)}" Question: "${q}"`, "Answer briefly.");
+                box.innerText = ans;
+            } catch(err) { box.innerText = "Error: " + err.message; }
+        }
+
+        // --- RENDER & PAGINATION (FIXED PDF ISSUE HERE) ---
+        function paginateData(data) {
+            allPages = [];
+            let currentPage = { title: null, sections: [] };
+            let currentY = PAGE_MARGIN + 20;
+
+            if (data.title) { currentPage.title = data.title; currentY += 60; }
+            if (data.sections) {
+                data.sections.forEach(section => {
+                    let h = 0;
+                    if (section.type === 'definition_box') h = 30 + measureWrappedTextHeight(section.content, 700, LINE_HEIGHT) + 40;
+                    else if (section.type === 'bullet_list') h = 35 + (section.points.length * 30) + 30;
+                    else if (section.type === 'flowchart') h = 40 + (section.steps.length * 60) + ((section.steps.length - 1) * 30) + 40;
+
+                    if (currentY + h > CONTENT_HEIGHT_LIMIT) {
+                        allPages.push(currentPage); currentPage = { title: null, sections: [] }; currentY = PAGE_MARGIN + 20;
+                    }
+                    currentPage.sections.push(section); currentY += h;
+                });
+            }
+            if (currentPage.sections.length > 0 || currentPage.title) allPages.push(currentPage);
+            currentPageIndex = 0; updatePaginationUI();
+        }
+
+        function renderPage(index) {
+            currentPageIndex = index;
+            const pageData = allPages[index];
+            
+            // 1. FILL WHITE BACKGROUND (Fixes Black PDF Issue)
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. DRAW PAPER LINES MANUALLY (Fixes missing lines in PDF)
+            drawPaperBackground();
+
+            let cursorY = PAGE_MARGIN + 20;
+            if(!pageData.title) cursorY = PAGE_MARGIN;
+            if (pageData.title) { drawTitle(pageData.title, cursorY); cursorY += 60; }
+
+            pageData.sections.forEach(section => {
+                if (section.type === 'definition_box') cursorY = drawDefinitionBox(section.heading, section.content, cursorY);
+                else if (section.type === 'bullet_list') cursorY = drawBulletList(section.heading, section.points, cursorY);
+                else if (section.type === 'flowchart') cursorY = drawFlowchart(section.heading, section.steps, cursorY);
+            });
+            updatePaginationUI();
+        }
+
+        function drawPaperBackground() {
+            // Draw Blue horizontal lines
+            ctx.beginPath();
+            ctx.strokeStyle = "#a8d1ff"; 
+            ctx.lineWidth = 1;
+            for (let y = 0; y < canvas.height; y += 30) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+            }
+            ctx.stroke();
+
+            // Draw Red Margin line
+            ctx.beginPath();
+            ctx.strokeStyle = "#ffcdd2"; 
+            ctx.lineWidth = 2;
+            ctx.moveTo(PAGE_MARGIN - 20, 0);
+            ctx.lineTo(PAGE_MARGIN - 20, canvas.height);
+            ctx.stroke();
+        }
+
+        async function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: [canvas.width, canvas.height] });
+            const originalIdx = currentPageIndex;
+            const btn = document.getElementById('downloadBtn');
+            const txt = btn.innerText; btn.disabled = true; btn.innerText = "⏳ ...";
+
+            try {
+                for (let i = 0; i < allPages.length; i++) {
+                    if (i > 0) doc.addPage();
+                    renderPage(i); // This now draws white bg + lines
+                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                    doc.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+                }
+                doc.save("my-ai-notes.pdf");
+                renderPage(originalIdx);
+            } catch (err) { alert("PDF Error: " + err.message); } 
+            finally { btn.disabled = false; btn.innerText = txt; }
+        }
+
+        // --- DRAWING HELPERS ---
+        function drawTitle(t,y) { 
+            ctx.font = "bold 40px 'Patrick Hand'"; ctx.fillStyle = "#d32f2f"; ctx.fillText(t, PAGE_MARGIN, y); 
+            rc.line(PAGE_MARGIN, y+5, PAGE_MARGIN+300, y+5, {roughness:2, stroke:"#d32f2f"}); 
+        }
+        function drawDefinitionBox(h,c,y) {
+            let startY = y; ctx.font = "bold 24px 'Patrick Hand'"; ctx.fillStyle = "#000"; ctx.fillText(h, PAGE_MARGIN+10, y); y+=30;
+            ctx.font = "20px 'Patrick Hand'"; 
+            let th = wrapText(ctx, c, PAGE_MARGIN+10, y, 700, LINE_HEIGHT);
+            y = th+20;
+            rc.rectangle(PAGE_MARGIN, startY-25, 720, y-startY+10, {roughness:1.5, stroke:"#2c3e50", strokeWidth:2, bowing:1.5});
+            return y+40;
+        }
+        function drawBulletList(h,p,y) {
+            ctx.font = "bold 24px 'Patrick Hand'"; ctx.fillStyle = "#000"; ctx.fillText(h, PAGE_MARGIN, y); y+=35;
+            ctx.font = "20px 'Patrick Hand'";
+            p.forEach(pt => { rc.circle(PAGE_MARGIN+10, y-7, 10, {fill:"black", fillStyle:'solid', roughness:0.5}); ctx.fillText(pt, PAGE_MARGIN+30, y); y+=30; });
+            return y+30;
+        }
+        function drawFlowchart(h,s,y) {
+            ctx.font = "bold 24px 'Patrick Hand'"; ctx.fillStyle = "#1565c0"; ctx.fillText("🔄 "+h, PAGE_MARGIN, y); y+=40;
+            let cx = canvas.width/2;
+            s.forEach((step,i) => {
+                rc.rectangle(cx-150, y, 300, 50, {roughness:2, stroke:"#1565c0", fill:"#e3f2fd", fillStyle:'hachure'});
+                ctx.font = "20px 'Patrick Hand'"; ctx.fillStyle = "#000"; 
+                ctx.fillText(step, cx - (ctx.measureText(step).width/2), y+33);
+                y+=50;
+                if(i<s.length-1) { rc.line(cx,y,cx,y+30,{stroke:"#000"}); y+=30; }
+            });
+            return y+40;
+        }
+        function measureWrappedTextHeight(t,mw,lh) {
+            ctx.font = "20px 'Patrick Hand'"; let words=t.split(' '), line='', h=0;
+            for(let i=0; i<words.length; i++) {
+                if(ctx.measureText(line+words[i]+' ').width > mw && i>0) { line=words[i]+' '; h+=lh; } else line+=words[i]+' ';
+            } return h+lh;
+        }
+        function wrapText(c,t,x,y,mw,lh) {
+            let words=t.split(' '), line='';
+            for(let i=0; i<words.length; i++) {
+                if(c.measureText(line+words[i]+' ').width > mw && i>0) { c.fillText(line,x,y); line=words[i]+' '; y+=lh; } else line+=words[i]+' ';
+            } c.fillText(line,x,y); return y;
+        }
+        function updatePaginationUI() {
+            const c=document.getElementById('paginationControls');
+            if(allPages.length>1) { c.style.display='flex'; document.getElementById('pageIndicator').innerText=`Page ${currentPageIndex+1}/${allPages.length}`; }
+            else c.style.display='none';
+        }
+        function changePage(d) { let n=currentPageIndex+d; if(n>=0 && n<allPages.length) renderPage(n); }
+        function getMockData() { return { "title": "Mock Data", "sections": [{ "type": "definition_box", "heading": "Error", "content": "No API Key." }] }; }
+    </script>
+</body>
+</html>
